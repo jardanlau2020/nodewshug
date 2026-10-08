@@ -17,12 +17,12 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         ref: dev
 
     - name: Setup Node.js 18
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: 18
 
@@ -60,7 +60,7 @@ jobs:
         ls -lh dist/
 
     - name: Delete existing release
-      uses: actions/github-script@v7
+      uses: actions/github-script@v9
       continue-on-error: true
       with:
         script: |
@@ -88,7 +88,7 @@ jobs:
       run: sleep 3
 
     - name: Create or Update Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v3
       with:
         tag_name: node-ws-binary
         name: node-ws-binary
