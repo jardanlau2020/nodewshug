@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "ws": "^8.14.2",
-    "axios": "^1.12.2"
+    "axios": "^1.7.0"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   }
 }

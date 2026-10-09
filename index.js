@@ -10,10 +10,26 @@ const crypto = require('crypto');
 const { Buffer } = require('buffer');
 const { exec, execSync } = require('child_process');
 const { WebSocket, createWebSocketStream } = require('ws');
-const UUID = process.env.UUID || '5efabea4-f6d4-91fd-b8f0-17e004c89c60'; // 运行哪吒v1,在不同的平台需要改UUID,否则会被覆盖
-const NEZHA_SERVER = process.env.NEZHA_SERVER || '';       // 哪吒v1填写形式：nz.abc.com:8008   哪吒v0填写形式：nz.abc.com
-const NEZHA_PORT = process.env.NEZHA_PORT || '';           // 哪吒v1没有此变量，v0的agent端口为{443,8443,2096,2087,2083,2053}其中之一时开启tls
-const NEZHA_KEY = process.env.NEZHA_KEY || '';             // v1的NZ_CLIENT_SECRET或v0的agent端口                
+const _uuid = process.env.UUID || '';
+if (!_uuid) {
+  console.error('[FATAL] UUID environment variable is not set. Refusing to start with a public default UUID.');
+  process.exit(1);
+}
+const UUID = _uuid;
+// Validate Nezha variables: only allow safe characters to prevent shell injection
+const _SAFE_RE = /^[a-zA-Z0-9._:-]+$/;
+const NEZHA_SERVER = process.env.NEZHA_SERVER || '';
+const NEZHA_PORT = process.env.NEZHA_PORT || '';
+const NEZHA_KEY = process.env.NEZHA_KEY || '';
+function _validateNezhaVars() {
+  for (const [name, val] of [['NEZHA_SERVER', NEZHA_SERVER], ['NEZHA_PORT', NEZHA_PORT], ['NEZHA_KEY', NEZHA_KEY]]) {
+    if (val && !_SAFE_RE.test(val)) {
+      console.error(`[FATAL] ${name} contains characters that could cause shell injection. Only [a-zA-Z0-9._:-] are allowed.`);
+      process.exit(1);
+    }
+  }
+}
+_validateNezhaVars();
 const DOMAIN = process.env.DOMAIN || 'your-domain.com';    // 填写项目域名或已反代的域名，不带前缀，建议填已反代的域名
 const AUTO_ACCESS = process.env.AUTO_ACCESS || false;      // 是否开启自动访问保活,false为关闭,true为开启,需同时填写DOMAIN变量
 const WSPATH = process.env.WSPATH || UUID.slice(0, 8);     // 节点路径，默认获取uuid前8位
@@ -39,12 +55,12 @@ function isBlockedDomain(host) {
 
 async function getisp() {
   try {
-    const res = await axios.get('https://api.ip.sb/geoip', { headers: { 'User-Agent': 'Mozilla/5.0', timeout: 3000 }});
+    const res = await axios.get('https://api.ip.sb/geoip', { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
     const data = res.data;
     ISP = `${data.country_code}-${data.isp}`.replace(/ /g, '_');
   } catch (e) {
     try {
-      const res2 = await axios.get('http://ip-api.com/json', { headers: { 'User-Agent': 'Mozilla/5.0', timeout: 3000 }});
+      const res2 = await axios.get('http://ip-api.com/json', { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 3000 });
       const data2 = res2.data;
       ISP = `${data2.countryCode}-${data2.org}`.replace(/ /g, '_');
     } catch (e2) {
@@ -148,14 +164,14 @@ function resolveHost(host) {
 function handleVlsConnection(ws, msg) {
   const [VERSION] = msg;
   const id = msg.slice(1, 17);
-  if (!id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16))) return false;
+  if (!id.every((v, i) => v === parseInt(uuid.slice(i * 2, i * 2 + 2), 16))) return false;
 
   let i = msg.slice(17, 18).readUInt8() + 19;
   const port = msg.slice(i, i += 2).readUInt16BE(0);
   const ATYP = msg.slice(i, i += 1).readUInt8();
-  const host = ATYP == 1 ? msg.slice(i, i += 4).join('.') :
-    (ATYP == 2 ? new TextDecoder().decode(msg.slice(i + 1, i += 1 + msg.slice(i, i + 1).readUInt8())) :
-      (ATYP == 3 ? msg.slice(i, i += 16).reduce((s, b, i, a) => (i % 2 ? s.concat(a.slice(i - 1, i + 1)) : s), []).map(b => b.readUInt16BE(0).toString(16)).join(':') : ''));
+  const host = ATYP === 1 ? msg.slice(i, i += 4).join('.') :
+    (ATYP === 2 ? new TextDecoder().decode(msg.slice(i + 1, i += 1 + msg.slice(i, i + 1).readUInt8())) :
+      (ATYP === 3 ? msg.slice(i, i += 16).reduce((s, b, i, a) => (i % 2 ? s.concat(a.slice(i - 1, i + 1)) : s), []).map(b => b.readUInt16BE(0).toString(16)).join(':') : ''));
 
   if (isBlockedDomain(host)) {
     ws.close();
@@ -333,7 +349,7 @@ wss.on('connection', (ws, req) => {
     // VLE-SS (version byte 0 + 16 bytes UUID)
     if (msg.length > 17 && msg[0] === 0) {
       const id = msg.slice(1, 17);
-      const isVless = id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16));
+      const isVless = id.every((v, i) => v === parseInt(uuid.slice(i * 2, i * 2 + 2), 16));
       if (isVless) {
         if (!handleVlsConnection(ws, msg)) {
           ws.close();
